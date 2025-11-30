@@ -1,0 +1,59 @@
+# Netlify configuration for Kyndryl Banking Assistant
+# This file manages deployment and build processes for both frontend and backend
+
+[build]
+# Build command - runs frontend setup
+command = "cd frontend && npm install && npm run build"
+# Directory to deploy
+publish = "frontend/build"
+
+# Environment variables
+[build.environment]
+NODE_VERSION = "18"
+PYTHON_VERSION = "3.11"
+
+# Functions configuration for backend
+[functions]
+directory = "backend"
+node_bundler = "esbuild"
+
+# Redirects for API calls
+[[redirects]]
+from = "/api/*"
+to = "/.netlify/functions/api/:splat"
+status = 200
+
+# Dev server configuration
+[dev]
+# Frontend dev server
+command = "cd frontend && npm start"
+functions = "backend"
+port = 3000
+# Backend server runs on port 5000
+targetPort = 5000
+
+# Rewrite rules for single page app
+[[redirects]]
+from = "/*"
+to = "/index.html"
+status = 200
+
+# Cache headers
+[[headers]]
+for = "/*"
+[headers.values]
+Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+for = "/static/*"
+[headers.values]
+Cache-Control = "public, max-age=31536000, immutable"
+
+# Additional environment for local development
+[env.development]
+[env.development.build.environment]
+API_BASE_URL = "http://localhost:5000"
+
+[env.production]
+[env.production.build.environment]
+API_BASE_URL = "https://kyndryl-banking-assistant.netlify.app"
