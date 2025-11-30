@@ -1,5 +1,5 @@
 # Netlify configuration for Kyndryl Banking Assistant
-# Deploys React frontend + Python Flask backend using Railpack
+# Deploys React frontend + Python Flask backend
 
 [build]
 # Build frontend and prepare backend for serverless deployment
@@ -8,16 +8,14 @@ command = "cd frontend && npm install && npm run build"
 publish = "frontend/build"
 # Functions directory for serverless backend
 functions = "netlify/functions"
+# Ignore commands - don't rebuild on these file changes
+ignore = "git diff --quiet HEAD~1 frontend/"
 
 # Environment variables for build
 [build.environment]
 NODE_VERSION = "18"
 PYTHON_VERSION = "3.11"
 PIP_CACHE_DIR = ".cache/pip"
-
-# Ignore commands - don't rebuild on these file changes
-[build.ignore]
-command = "git diff --quiet HEAD~1 frontend/"
 
 # Dev server configuration
 [dev]
