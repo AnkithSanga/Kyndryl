@@ -8,26 +8,18 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Language code mapping
+# Language code mapping - Top 10 Indian languages
 LANGUAGE_MAP = {
     'en': 'english',
     'hi': 'hindi',
-    'ta': 'tamil',
     'te': 'telugu',
+    'ta': 'tamil',
     'kn': 'kannada',
     'ml': 'malayalam',
     'mr': 'marathi',
     'gu': 'gujarati',
     'bn': 'bengali',
-    'es': 'spanish',
-    'fr': 'french',
-    'de': 'german',
-    'zh': 'chinese',
-    'ja': 'japanese',
-    'ko': 'korean',
-    'ar': 'arabic',
-    'pt': 'portuguese',
-    'ru': 'russian'
+    'or': 'odia'
 }
 
 def detect_language(text):

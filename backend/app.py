@@ -79,8 +79,8 @@ def detect_intent_and_language(message, preferred_language='en'):
     # Use translation service for better language detection
     try:
         detected_lang = detect_language(message)
-        # Supported languages list
-        supported_languages = ['en', 'hi', 'ta', 'te', 'kn', 'ml', 'mr', 'gu', 'bn', 'es', 'fr', 'de', 'pt', 'zh', 'ja', 'ko', 'ar', 'ru']
+        # Supported languages list - Top 10 Indian languages
+        supported_languages = ['en', 'hi', 'te', 'ta', 'kn', 'ml', 'mr', 'gu', 'bn', 'or']
         # If detected language is one of our supported languages, use it
         if detected_lang in supported_languages:
             language = detected_lang
@@ -98,7 +98,7 @@ def detect_intent_and_language(message, preferred_language='en'):
                 language = preferred_language if preferred_language in supported_languages else 'en'
     except Exception as e:
         logger.error(f"Language detection error: {e}")
-        supported_languages = ['en', 'hi', 'ta', 'te', 'kn', 'ml', 'mr', 'gu', 'bn', 'es', 'fr', 'de', 'pt', 'zh', 'ja', 'ko', 'ar', 'ru']
+        supported_languages = ['en', 'hi', 'te', 'ta', 'kn', 'ml', 'mr', 'gu', 'bn', 'or']
         language = preferred_language if preferred_language in supported_languages else 'en'
     
     # Enhanced intent detection with more keywords
@@ -142,8 +142,8 @@ def chat():
     try:
         # ALWAYS use the preferred language (selected from dropdown) for responses
         # This ensures user gets response in their selected language regardless of input
-        # Supported languages: en, hi, ta, te, kn, ml, mr, gu, bn, es, fr, de, pt, zh, ja, ko, ar, ru
-        supported_languages = ['en', 'hi', 'ta', 'te', 'kn', 'ml', 'mr', 'gu', 'bn', 'es', 'fr', 'de', 'pt', 'zh', 'ja', 'ko', 'ar', 'ru']
+        # Supported languages: Top 10 Indian languages
+        supported_languages = ['en', 'hi', 'te', 'ta', 'kn', 'ml', 'mr', 'gu', 'bn', 'or']
         target_language = preferred_language if preferred_language in supported_languages else 'en'
         
         # Detect intent (but not for language selection - we use preferred_language)
@@ -251,7 +251,7 @@ def get_faq_categories():
 def get_faq_category(category_id):
     """Get FAQs for a specific category"""
     language = request.args.get('language', 'en')
-    supported_languages = ['en', 'hi', 'ta', 'te', 'kn', 'ml', 'mr', 'gu', 'bn', 'es', 'fr', 'de', 'pt', 'zh', 'ja', 'ko', 'ar', 'ru']
+    supported_languages = ['en', 'hi', 'te', 'ta', 'kn', 'ml', 'mr', 'gu', 'bn', 'or']
     if language not in supported_languages:
         language = 'en'
     
@@ -287,7 +287,7 @@ def translate():
     if not text:
         return jsonify({'error': 'Text is required'}), 400
     
-    supported_languages = ['en', 'hi', 'ta', 'te', 'kn', 'ml', 'mr', 'gu', 'bn', 'es', 'fr', 'de', 'pt', 'zh', 'ja', 'ko', 'ar', 'ru']
+    supported_languages = ['en', 'hi', 'te', 'ta', 'kn', 'ml', 'mr', 'gu', 'bn', 'or']
     if target_language not in supported_languages:
         return jsonify({'error': 'Unsupported target language'}), 400
     

@@ -5,13 +5,40 @@ import FAQMenu from './FAQMenu';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 
+// Map our language codes to SpeechRecognition API language codes
+const SPEECH_LANGUAGE_MAP = {
+  'en': 'en-US',
+  'hi': 'hi-IN',
+  'ta': 'ta-IN',
+  'te': 'te-IN',
+  'kn': 'kn-IN',
+  'ml': 'ml-IN',
+  'mr': 'mr-IN',
+  'gu': 'gu-IN',
+  'bn': 'bn-IN',
+  'es': 'es-ES',
+  'fr': 'fr-FR',
+  'de': 'de-DE',
+  'pt': 'pt-PT',
+  'zh': 'zh-CN',
+  'ja': 'ja-JP',
+  'ko': 'ko-KR',
+  'ar': 'ar-SA',
+  'ru': 'ru-RU'
+};
+
 const ChatInterface = ({ sessionId, language }) => {
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showFAQ, setShowFAQ] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [voiceMode, setVoiceMode] = useState('auto'); // 'auto' or 'manual'
+  const [showVoiceOptions, setShowVoiceOptions] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const recognitionRef = useRef(null);
+  const isStartingRef = useRef(false);
 
   const quickActions = {
     en: [
@@ -54,13 +81,117 @@ const ChatInterface = ({ sessionId, language }) => {
   };
 
   useEffect(() => {
-    // Send initial greeting
-    sendMessage('Hello', true);
-  }, [language]);
+    // Initialize Speech Recognition
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const recognition = new SpeechRecognition();
+      
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      
+      recognition.onstart = () => {
+        setIsListening(true);
+        isStartingRef.current = false;
+      };
+      
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        setInputMessage(transcript);
+        setIsListening(false);
+        // Auto-send the recognized text
+        if (transcript.trim()) {
+          sendMessage(transcript);
+        }
+      };
+      
+      recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        setIsListening(false);
+        
+        // Don't show alert for these common errors that are handled gracefully
+        if (event.error === 'no-speech') {
+          // User didn't speak - this is normal, don't show error
+          return;
+        } else if (event.error === 'aborted') {
+          // Recognition was stopped - this is normal
+          return;
+        } else if (event.error === 'audio-capture') {
+          alert('No microphone found. Please connect a microphone and try again.');
+        } else if (event.error === 'not-allowed') {
+          alert('Microphone permission denied. Please enable microphone access in your browser settings.');
+        } else if (event.error === 'network') {
+          alert('Network error. Please check your internet connection and try again.');
+        } else if (event.error === 'service-not-allowed') {
+          alert('Speech recognition service is not available. Please try again later.');
+        } else {
+          // Only show alert for unexpected errors
+          console.warn('Speech recognition error (non-critical):', event.error);
+        }
+      };
+      
+      recognition.onend = () => {
+        setIsListening(false);
+        isStartingRef.current = false;
+      };
+      
+      recognitionRef.current = recognition;
+    }
+    
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    // Update recognition language when language or voice mode changes
+    if (recognitionRef.current) {
+      // Stop recognition if it's currently running before changing language
+      if (isListening) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {
+          // Ignore errors when stopping
+        }
+        setIsListening(false);
+      }
+      
+      if (voiceMode === 'auto') {
+        // Auto-detect: try to use a language that matches user's selection
+        // If user selected a language, use that for better accuracy
+        // Otherwise default to English
+        const detectedLang = SPEECH_LANGUAGE_MAP[language] || 'en-US';
+        recognitionRef.current.lang = detectedLang;
+      } else {
+        // Manual: use selected language
+        recognitionRef.current.lang = SPEECH_LANGUAGE_MAP[language] || 'en-US';
+      }
+    }
+  }, [language, voiceMode, isListening]);
+
+  // useEffect(() => {
+  //   // Send initial greeting
+  //   sendMessage('Hello', true);
+  // }, [language]);
 
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Close voice options dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showVoiceOptions && !event.target.closest('.voice-mode-selector')) {
+        setShowVoiceOptions(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showVoiceOptions]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -149,6 +280,93 @@ const ChatInterface = ({ sessionId, language }) => {
     setShowFAQ(false);
   };
 
+  const startListening = () => {
+    if (!recognitionRef.current) {
+      alert('Speech recognition is not supported in your browser. Please use Chrome, Edge, or Safari.');
+      return;
+    }
+    
+    // Prevent multiple simultaneous starts
+    if (isStartingRef.current) {
+      return;
+    }
+    
+    // If already listening, stop it first
+    if (isListening) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {
+        // Ignore stop errors
+      }
+      setIsListening(false);
+      isStartingRef.current = false;
+      return;
+    }
+    
+    // Set language before starting
+    try {
+      if (voiceMode === 'auto') {
+        // For auto mode, use the selected language as a hint
+        // The browser will still try to detect, but this improves accuracy
+        recognitionRef.current.lang = SPEECH_LANGUAGE_MAP[language] || 'en-US';
+      } else {
+        recognitionRef.current.lang = SPEECH_LANGUAGE_MAP[language] || 'en-US';
+      }
+      
+      // Stop any existing recognition first
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {
+        // Ignore if not running
+      }
+      
+      isStartingRef.current = true;
+      
+      // Small delay to ensure previous recognition is stopped
+      setTimeout(() => {
+        try {
+          recognitionRef.current.start();
+          isStartingRef.current = false;
+        } catch (error) {
+          console.error('Error starting recognition:', error);
+          setIsListening(false);
+          isStartingRef.current = false;
+          
+          // Handle specific errors
+          if (error.name === 'InvalidStateError' || error.message?.includes('already started')) {
+            // Recognition is already running, try to stop and restart
+            try {
+              recognitionRef.current.stop();
+              setTimeout(() => {
+                try {
+                  recognitionRef.current.start();
+                } catch (e2) {
+                  console.error('Error restarting recognition:', e2);
+                  // Don't show alert for this, just log it
+                }
+              }, 200);
+            } catch (e) {
+              console.error('Error stopping recognition:', e);
+            }
+          } else {
+            // Only show alert for unexpected errors
+            console.warn('Recognition start error:', error);
+          }
+        }
+      }, 100);
+    } catch (error) {
+      console.error('Error setting up recognition:', error);
+      isStartingRef.current = false;
+    }
+  };
+
+  const stopListening = () => {
+    if (recognitionRef.current && isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    }
+  };
+
   const formatTime = (date) => {
     return new Date(date).toLocaleTimeString('en-US', {
       hour: '2-digit',
@@ -226,6 +444,43 @@ const ChatInterface = ({ sessionId, language }) => {
       </div>
 
       <form className="input-container" onSubmit={handleSubmit}>
+        <div className="voice-controls-wrapper">
+          <div className="voice-mode-selector">
+            <button
+              type="button"
+              className="voice-options-toggle"
+              onClick={() => setShowVoiceOptions(!showVoiceOptions)}
+              title="Voice Recognition Options"
+            >
+              🎤
+            </button>
+            {showVoiceOptions && (
+              <div className="voice-options-dropdown">
+                <div className="voice-option-header">Voice Recognition Mode</div>
+                <label className="voice-option">
+                  <input
+                    type="radio"
+                    name="voiceMode"
+                    value="auto"
+                    checked={voiceMode === 'auto'}
+                    onChange={(e) => setVoiceMode(e.target.value)}
+                  />
+                  <span>Auto Detect Language</span>
+                </label>
+                <label className="voice-option">
+                  <input
+                    type="radio"
+                    name="voiceMode"
+                    value="manual"
+                    checked={voiceMode === 'manual'}
+                    onChange={(e) => setVoiceMode(e.target.value)}
+                  />
+                  <span>Use Selected Language ({language})</span>
+                </label>
+              </div>
+            )}
+          </div>
+        </div>
         <div className="input-wrapper">
           <input
             ref={inputRef}
@@ -234,32 +489,47 @@ const ChatInterface = ({ sessionId, language }) => {
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
             placeholder={
-              language === 'hi' ? 'अपना संदेश टाइप करें...' :
-              language === 'ta' ? 'உங்கள் செய்தியை தட்டச்சு செய்யவும்...' :
-              language === 'te' ? 'మీ సందేశాన్ని టైప్ చేయండి...' :
-              language === 'kn' ? 'ನಿಮ್ಮ ಸಂದೇಶವನ್ನು ಟೈಪ್ ಮಾಡಿ...' :
-              language === 'ml' ? 'നിങ്ങളുടെ സന്ദേശം ടൈപ്പ് ചെയ്യുക...' :
-              language === 'mr' ? 'आपला संदेश टाइप करा...' :
-              language === 'gu' ? 'તમારો સંદેશ ટાઇપ કરો...' :
-              language === 'bn' ? 'আপনার বার্তা টাইপ করুন...' :
-              language === 'es' ? 'Escribe tu mensaje...' :
-              language === 'fr' ? 'Tapez votre message...' :
-              language === 'de' ? 'Geben Sie Ihre Nachricht ein...' :
-              language === 'pt' ? 'Digite sua mensagem...' :
-              language === 'zh' ? '输入您的消息...' :
-              language === 'ja' ? 'メッセージを入力...' :
-              language === 'ko' ? '메시지를 입력하세요...' :
-              language === 'ar' ? 'اكتب رسالتك...' :
-              language === 'ru' ? 'Введите ваше сообщение...' :
-              'Type your message...'
+              language === 'hi' ? 'अपना संदेश टाइप करें या माइक पर क्लिक करें...' :
+              language === 'ta' ? 'உங்கள் செய்தியை தட்டச்சு செய்யவும் அல்லது மைக்ரோஃபோனைக் கிளிக் செய்யவும்...' :
+              language === 'te' ? 'మీ సందేశాన్ని టైప్ చేయండి లేదా మైక్రోఫోన్‌ను క్లిక్ చేయండి...' :
+              language === 'kn' ? 'ನಿಮ್ಮ ಸಂದೇಶವನ್ನು ಟೈಪ್ ಮಾಡಿ ಅಥವಾ ಮೈಕ್ರೋಫೋನ್ ಅನ್ನು ಕ್ಲಿಕ್ ಮಾಡಿ...' :
+              language === 'ml' ? 'നിങ്ങളുടെ സന്ദേശം ടൈപ്പ് ചെയ്യുക അല്ലെങ്കിൽ മൈക്രോഫോൺ ക്ലിക്ക് ചെയ്യുക...' :
+              language === 'mr' ? 'आपला संदेश टाइप करा किंवा मायक्रोफोन क्लिक करा...' :
+              language === 'gu' ? 'તમારો સંદેશ ટાઇપ કરો અથવા માઇક્રોફોન ક્લિક કરો...' :
+              language === 'bn' ? 'আপনার বার্তা টাইপ করুন বা মাইক্রোফোন ক্লিক করুন...' :
+              language === 'es' ? 'Escribe tu mensaje o haz clic en el micrófono...' :
+              language === 'fr' ? 'Tapez votre message ou cliquez sur le microphone...' :
+              language === 'de' ? 'Geben Sie Ihre Nachricht ein oder klicken Sie auf das Mikrofon...' :
+              language === 'pt' ? 'Digite sua mensagem ou clique no microfone...' :
+              language === 'zh' ? '输入您的消息或点击麦克风...' :
+              language === 'ja' ? 'メッセージを入力するか、マイクをクリック...' :
+              language === 'ko' ? '메시지를 입력하거나 마이크를 클릭하세요...' :
+              language === 'ar' ? 'اكتب رسالتك أو انقر على الميكروفون...' :
+              language === 'ru' ? 'Введите ваше сообщение или нажмите на микрофон...' :
+              'Type your message or click the microphone...'
             }
-            disabled={isLoading}
+            disabled={isLoading || isListening}
           />
+          {isListening && (
+            <div className="listening-indicator">
+              <span className="pulse-dot"></span>
+              <span>Listening...</span>
+            </div>
+          )}
         </div>
+        <button
+          type="button"
+          className={`voice-button ${isListening ? 'listening' : ''}`}
+          onClick={startListening}
+          disabled={isLoading}
+          title={isListening ? 'Stop listening' : 'Start voice input'}
+        >
+          {isListening ? '⏹️' : '🎤'}
+        </button>
         <button
           type="submit"
           className="send-button"
-          disabled={isLoading || !inputMessage.trim()}
+          disabled={isLoading || !inputMessage.trim() || isListening}
         >
           Send
         </button>
