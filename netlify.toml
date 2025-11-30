@@ -3,7 +3,7 @@
 
 [build]
 # Build frontend and prepare backend for serverless deployment
-command = "cd frontend && npm install && npm run build && cd .. && pip install -r backend/requirements.txt"
+command = "cd frontend && npm install && npm run build"
 # Directory to deploy (React build output)
 publish = "frontend/build"
 # Functions directory for serverless backend
