@@ -192,11 +192,12 @@ const ChatInterface = ({ sessionId, language }) => {
     }
   }, [language, voiceMode, isListening]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   // Note: Initial greeting disabled to avoid unnecessary API calls
-  // Uncomment below if needed and ensure sendMessage is in dependencies
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   // useEffect(() => {
   //   sendMessage('Hello', true);
-  // }, [language, sendMessage]);
+  // }, [language]);
 
   useEffect(() => {
     scrollToBottom();
