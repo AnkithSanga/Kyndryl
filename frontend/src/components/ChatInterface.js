@@ -36,11 +36,11 @@ const ChatInterface = ({ sessionId, language }) => {
   const [voiceMode, setVoiceMode] = useState('auto'); // 'auto' or 'manual'
   const [showVoiceOptions, setShowVoiceOptions] = useState(false);
   const [useAI, setUseAI] = useState(false); // Toggle for AI responses
-  const [showAIOptions, setShowAIOptions] = useState(false); // Toggle AI settings dropdown
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const recognitionRef = useRef(null);
   const isStartingRef = useRef(false);
+  const useAIRef = useRef(false); // Ref to track current AI toggle state
 
   const quickActions = {
     en: [
@@ -82,6 +82,11 @@ const ChatInterface = ({ sessionId, language }) => {
     ru: ['Check Balance', 'View Transactions', 'Transfer Money', 'Loan Information', 'Card Services']
   };
 
+  // Update useAI ref whenever useAI state changes
+  useEffect(() => {
+    useAIRef.current = useAI;
+  }, [useAI]);
+
   useEffect(() => {
     // Initialize Speech Recognition
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
@@ -97,12 +102,27 @@ const ChatInterface = ({ sessionId, language }) => {
       };
       
       recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
+        // Get the full transcript from all results
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+          // Add a space between results if they're separate
+          if (!event.results[i].isFinal) {
+            transcript += ' ';
+          }
+        }
+        
+        // Trim and set the input message
+        transcript = transcript.trim();
         setInputMessage(transcript);
         setIsListening(false);
-        // Auto-send the recognized text
-        if (transcript.trim()) {
-          sendMessage(transcript);
+        
+        // Auto-send the recognized text if it's not empty
+        if (transcript && transcript.length > 0) {
+          // Use setTimeout to ensure state is updated before sending
+          setTimeout(() => {
+            sendMessage(transcript);
+          }, 50);
         }
       };
       
@@ -187,25 +207,25 @@ const ChatInterface = ({ sessionId, language }) => {
       if (showVoiceOptions && !event.target.closest('.voice-mode-selector')) {
         setShowVoiceOptions(false);
       }
-      if (showAIOptions && !event.target.closest('.ai-mode-selector') && !event.target.closest('.ai-options-dropdown')) {
-        setShowAIOptions(false);
-      }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [showVoiceOptions, showAIOptions]);
+  }, [showVoiceOptions]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   const sendMessage = async (message, isInitial = false) => {
-    if (!message.trim() && !isInitial) return;
+    // Ensure message is properly trimmed
+    const trimmedMessage = String(message).trim();
+    
+    if (!trimmedMessage && !isInitial) return;
 
-    const userMessage = isInitial ? 'Hello' : message;
+    const userMessage = isInitial ? 'Hello' : trimmedMessage;
     const newUserMessage = {
       id: Date.now(),
       text: userMessage,
@@ -223,7 +243,7 @@ const ChatInterface = ({ sessionId, language }) => {
         session_id: sessionId,
         language: language,
         translate: true,  // Always enable translation
-        use_ai: useAI  // Pass AI toggle setting
+        use_ai: useAIRef.current  // Pass current AI toggle setting from ref
       });
 
       const assistantMessage = {
@@ -393,38 +413,12 @@ const ChatInterface = ({ sessionId, language }) => {
             <div className="ai-mode-selector">
               <button
                 className={`ai-toggle-btn ${useAI ? 'active' : ''}`}
-                onClick={() => setShowAIOptions(!showAIOptions)}
-                title={useAI ? 'AI Enabled' : 'AI Disabled'}
+                onClick={() => setUseAI(!useAI)}
+                title={useAI ? 'AI Enabled - Click to Disable' : 'AI Disabled - Click to Enable'}
               >
                 🤖
                 <span>{useAI ? 'AI ON' : 'AI OFF'}</span>
               </button>
-              {showAIOptions && (
-                <div className="ai-options-dropdown">
-                  <div className="ai-option-header">Response Mode</div>
-                  <label className="ai-option">
-                    <input
-                      type="radio"
-                      name="aiMode"
-                      value="traditional"
-                      checked={!useAI}
-                      onChange={() => setUseAI(false)}
-                    />
-                    <span>Traditional (FAQ & Rules)</span>
-                  </label>
-                  <label className="ai-option">
-                    <input
-                      type="radio"
-                      name="aiMode"
-                      value="ai"
-                      checked={useAI}
-                      onChange={() => setUseAI(true)}
-                    />
-                    <span>AI Powered (Gemini)</span>
-                  </label>
-                  <p className="ai-info-text">AI mode provides more intelligent and conversational responses while staying within banking assistant boundaries.</p>
-                </div>
-              )}
             </div>
             <button
               className="faq-toggle-btn"
