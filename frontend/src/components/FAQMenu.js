@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import './FAQMenu.css';
 
@@ -11,11 +11,7 @@ const FAQMenu = ({ language, onFAQSelect }) => {
   const [loading, setLoading] = useState(true);
   const [expandedFAQ, setExpandedFAQ] = useState(null);
 
-  useEffect(() => {
-    fetchCategories();
-  }, [language]);
-
-  const fetchCategories = async () => {
+  const fetchCategories = useCallback(async () => {
     try {
       setLoading(true);
       const response = await axios.get(`${API_BASE_URL}/faq/categories`, {
@@ -27,7 +23,11 @@ const FAQMenu = ({ language, onFAQSelect }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [language]);
+
+  useEffect(() => {
+    fetchCategories();
+  }, [fetchCategories]);
 
   const fetchCategoryFAQs = async (categoryId) => {
     try {

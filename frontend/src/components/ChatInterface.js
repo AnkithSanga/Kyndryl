@@ -192,10 +192,11 @@ const ChatInterface = ({ sessionId, language }) => {
     }
   }, [language, voiceMode, isListening]);
 
+  // Note: Initial greeting disabled to avoid unnecessary API calls
+  // Uncomment below if needed and ensure sendMessage is in dependencies
   // useEffect(() => {
-  //   // Send initial greeting
   //   sendMessage('Hello', true);
-  // }, [language]);
+  // }, [language, sendMessage]);
 
   useEffect(() => {
     scrollToBottom();
@@ -387,12 +388,8 @@ const ChatInterface = ({ sessionId, language }) => {
     }
   };
 
-  const stopListening = () => {
-    if (recognitionRef.current && isListening) {
-      recognitionRef.current.stop();
-      setIsListening(false);
-    }
-  };
+  // stopListening is handled internally by the recognition event listeners
+  // and can be triggered via recognitionRef.current.stop() when needed
 
   const formatTime = (date) => {
     return new Date(date).toLocaleTimeString('en-US', {
