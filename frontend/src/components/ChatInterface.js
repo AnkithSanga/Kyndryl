@@ -35,6 +35,8 @@ const ChatInterface = ({ sessionId, language }) => {
   const [isListening, setIsListening] = useState(false);
   const [voiceMode, setVoiceMode] = useState('auto'); // 'auto' or 'manual'
   const [showVoiceOptions, setShowVoiceOptions] = useState(false);
+  const [useAI, setUseAI] = useState(false); // Toggle for AI responses
+  const [showAIOptions, setShowAIOptions] = useState(false); // Toggle AI settings dropdown
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -185,13 +187,16 @@ const ChatInterface = ({ sessionId, language }) => {
       if (showVoiceOptions && !event.target.closest('.voice-mode-selector')) {
         setShowVoiceOptions(false);
       }
+      if (showAIOptions && !event.target.closest('.ai-mode-selector') && !event.target.closest('.ai-options-dropdown')) {
+        setShowAIOptions(false);
+      }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [showVoiceOptions]);
+  }, [showVoiceOptions, showAIOptions]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -217,14 +222,16 @@ const ChatInterface = ({ sessionId, language }) => {
         message: userMessage,
         session_id: sessionId,
         language: language,
-        translate: true  // Always enable translation
+        translate: true,  // Always enable translation
+        use_ai: useAI  // Pass AI toggle setting
       });
 
       const assistantMessage = {
         id: Date.now() + 1,
         text: response.data.response,
         sender: 'assistant',
-        timestamp: new Date()
+        timestamp: new Date(),
+        source: response.data.source // Track response source (ai, faq, or mock)
       };
 
       setTimeout(() => {
@@ -382,14 +389,52 @@ const ChatInterface = ({ sessionId, language }) => {
             <h2>💬 Chat with Your Banking Assistant</h2>
             <p>Ask me anything about your banking needs</p>
           </div>
-          <button
-            className="faq-toggle-btn"
-            onClick={() => setShowFAQ(!showFAQ)}
-            title={showFAQ ? 'Hide FAQs' : 'Show FAQs'}
-          >
-            {showFAQ ? '✕' : '📚'}
-            <span>{showFAQ ? 'Hide FAQs' : 'FAQs'}</span>
-          </button>
+          <div className="header-controls">
+            <div className="ai-mode-selector">
+              <button
+                className={`ai-toggle-btn ${useAI ? 'active' : ''}`}
+                onClick={() => setShowAIOptions(!showAIOptions)}
+                title={useAI ? 'AI Enabled' : 'AI Disabled'}
+              >
+                🤖
+                <span>{useAI ? 'AI ON' : 'AI OFF'}</span>
+              </button>
+              {showAIOptions && (
+                <div className="ai-options-dropdown">
+                  <div className="ai-option-header">Response Mode</div>
+                  <label className="ai-option">
+                    <input
+                      type="radio"
+                      name="aiMode"
+                      value="traditional"
+                      checked={!useAI}
+                      onChange={() => setUseAI(false)}
+                    />
+                    <span>Traditional (FAQ & Rules)</span>
+                  </label>
+                  <label className="ai-option">
+                    <input
+                      type="radio"
+                      name="aiMode"
+                      value="ai"
+                      checked={useAI}
+                      onChange={() => setUseAI(true)}
+                    />
+                    <span>AI Powered (Gemini)</span>
+                  </label>
+                  <p className="ai-info-text">AI mode provides more intelligent and conversational responses while staying within banking assistant boundaries.</p>
+                </div>
+              )}
+            </div>
+            <button
+              className="faq-toggle-btn"
+              onClick={() => setShowFAQ(!showFAQ)}
+              title={showFAQ ? 'Hide FAQs' : 'Show FAQs'}
+            >
+              {showFAQ ? '✕' : '📚'}
+              <span>{showFAQ ? 'Hide FAQs' : 'FAQs'}</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -408,6 +453,9 @@ const ChatInterface = ({ sessionId, language }) => {
             <div>
               <div className="message-content">{message.text}</div>
               <div className="message-time">{formatTime(message.timestamp)}</div>
+              {message.sender === 'assistant' && message.source && (
+                <div className="message-source">{message.source}</div>
+              )}
             </div>
             {message.sender === 'user' && (
               <div className="message-avatar">👤</div>

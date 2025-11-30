@@ -4,6 +4,11 @@ from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import os
 import logging
+import google.generativeai as genai
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Import translation and FAQ services
 from translation_service import translate_text, detect_language, translate_faq
@@ -11,6 +16,34 @@ from faq_data import BANKING_FAQS, get_faq_by_keyword, get_faqs_by_category, get
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Configure Google Generative AI (Gemini)
+GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY', 'AIzaSyAU0P4W-8F8ZkCbS8f-ilCccrOiVvvi3fM')
+if GOOGLE_API_KEY:
+    genai.configure(api_key=GOOGLE_API_KEY)
+    logger.info("Google Generative AI configured successfully with API key")
+else:
+    logger.warning("GOOGLE_API_KEY not configured. AI features will be disabled.")
+
+# System prompt for banking assistant boundaries
+BANKING_ASSISTANT_SYSTEM_PROMPT = """You are a helpful banking assistant for Kyndryl Bank. Your role is to assist customers with:
+- Account balance inquiries
+- Transaction history
+- Money transfers
+- Loan information
+- Card services and support
+- General banking questions
+
+IMPORTANT BOUNDARIES:
+1. ONLY provide banking-related assistance
+2. DO NOT discuss personal finance advice unrelated to the bank's services
+3. DO NOT perform actual transactions - only guide customers through the process
+4. ALWAYS prioritize customer security and data privacy
+5. If a question is outside banking scope, politely redirect to banking topics
+6. Be professional, helpful, and courteous at all times
+7. For sensitive queries, recommend contacting the bank directly
+
+Remember: You represent Kyndryl Bank and must maintain trust and professionalism."""
 
 app = Flask(__name__)
 CORS(app)
@@ -128,13 +161,14 @@ def detect_intent_and_language(message, preferred_language='en'):
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
-    """Main chat endpoint with translation and FAQ support
-    Always responds in the selected language regardless of input language"""
+    """Main chat endpoint with translation, FAQ support, and optional AI analysis
+    Supports both traditional FAQ/mock responses and AI-powered responses"""
     data = request.json
     user_message = data.get('message', '')
     session_id = data.get('session_id', 'default_session')
     preferred_language = data.get('language', 'en')
     enable_translation = data.get('translate', True)
+    use_ai = data.get('use_ai', False)  # Toggle for AI responses
     
     if not user_message:
         return jsonify({'error': 'Message is required'}), 400
@@ -149,42 +183,60 @@ def chat():
         # Detect intent (but not for language selection - we use preferred_language)
         intent, _ = detect_intent_and_language(user_message, target_language)
         
-        # Try to get FAQ answer first (searches in any language)
         assistant_response = None
-        faq_answer = get_faq_by_keyword(user_message, target_language)
+        response_source = 'mock'  # Default source
         
-        if faq_answer:
-            # FAQ answers are always in English, so translate to target language if needed
-            if target_language == 'en':
-                assistant_response = faq_answer
+        # If AI is enabled, use Gemini for enhanced responses
+        if use_ai:
+            logger.info(f"AI mode enabled for message: {user_message[:50]}...")
+            ai_response = get_ai_response(user_message, target_language)
+            if ai_response:
+                assistant_response = ai_response
+                response_source = 'ai'
+                logger.info(f"Successfully got AI response")
             else:
-                # Always translate FAQ answer to target language
-                if enable_translation:
-                    try:
-                        assistant_response = translate_text(faq_answer, target_language, 'en')
-                    except Exception as e:
-                        logger.error(f"FAQ translation error: {e}")
-                        assistant_response = faq_answer  # Fallback to English if translation fails
-                else:
-                    assistant_response = faq_answer
-        else:
-            # Fallback to mocked responses
-            # First try pre-translated responses
-            responses = MOCKED_RESPONSES.get(target_language, MOCKED_RESPONSES['en'])
-            assistant_response = responses.get(intent, responses['default'])
+                logger.info("AI response unavailable, falling back to FAQ/mock responses")
+                assistant_response = None
+        
+        # If no AI response or AI is disabled, use traditional FAQ/mock responses
+        if not assistant_response:
+            # Try to get FAQ answer first (searches in any language)
+            faq_answer = get_faq_by_keyword(user_message, target_language)
             
-            # If target language is not English and we got English response, translate it
-            if target_language != 'en' and enable_translation:
-                # Check if response is actually in English (comparing with English version)
-                english_response = MOCKED_RESPONSES['en'].get(intent, MOCKED_RESPONSES['en']['default'])
-                if assistant_response == english_response:
-                    # Response is still in English, need to translate
-                    try:
-                        assistant_response = translate_text(english_response, target_language, 'en')
-                    except Exception as e:
-                        logger.error(f"Response translation error: {e}")
-                        # Keep the English response if translation fails
-                        assistant_response = english_response
+            if faq_answer:
+                # FAQ answers are always in English, so translate to target language if needed
+                if target_language == 'en':
+                    assistant_response = faq_answer
+                else:
+                    # Always translate FAQ answer to target language
+                    if enable_translation:
+                        try:
+                            assistant_response = translate_text(faq_answer, target_language, 'en')
+                        except Exception as e:
+                            logger.error(f"FAQ translation error: {e}")
+                            assistant_response = faq_answer  # Fallback to English if translation fails
+                    else:
+                        assistant_response = faq_answer
+                response_source = 'faq'
+            else:
+                # Fallback to mocked responses
+                # First try pre-translated responses
+                responses = MOCKED_RESPONSES.get(target_language, MOCKED_RESPONSES['en'])
+                assistant_response = responses.get(intent, responses['default'])
+                
+                # If target language is not English and we got English response, translate it
+                if target_language != 'en' and enable_translation:
+                    # Check if response is actually in English (comparing with English version)
+                    english_response = MOCKED_RESPONSES['en'].get(intent, MOCKED_RESPONSES['en']['default'])
+                    if assistant_response == english_response:
+                        # Response is still in English, need to translate
+                        try:
+                            assistant_response = translate_text(english_response, target_language, 'en')
+                        except Exception as e:
+                            logger.error(f"Response translation error: {e}")
+                            # Keep the English response if translation fails
+                            assistant_response = english_response
+                response_source = 'mock'
         
         # Save interaction to database
         interaction = Interaction(
@@ -202,7 +254,8 @@ def chat():
             'language': target_language,
             'intent': intent,
             'session_id': session_id,
-            'translated': enable_translation
+            'translated': enable_translation,
+            'source': response_source
         })
         
     except Exception as e:
@@ -210,6 +263,243 @@ def chat():
         import traceback
         logger.error(traceback.format_exc())
         return jsonify({'error': 'An error occurred processing your request'}), 500
+
+
+def get_ai_response(user_message, target_language):
+    """Get response from Google Gemini AI with fallback chain for maximum compatibility
+    
+    Model Priority:
+    1. gemini-2.5-flash (Latest, fastest, most capable - requires google-generativeai 0.8.3+)
+    2. gemini-1.5-flash (Fast, reliable, widely available)
+    3. gemini-1.5-pro (Slower but more capable fallback)
+    4. gemini-pro (Legacy fallback)
+    """
+    try:
+        if not GOOGLE_API_KEY:
+            logger.error("[AI] ❌ Google API key not configured")
+            return None
+        
+        models_to_try = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
+        model = None
+        used_model = None
+        
+        # Try each model in priority order
+        for model_name in models_to_try:
+            try:
+                logger.info(f"[AI] Trying model: {model_name}")
+                model = genai.GenerativeModel(
+                    model_name=model_name,
+                    system_instruction=BANKING_ASSISTANT_SYSTEM_PROMPT
+                )
+                used_model = model_name
+                logger.info(f"[AI] ✓ Successfully initialized {model_name}")
+                break
+            except Exception as e:
+                logger.warning(f"[AI] ✗ {model_name} unavailable: {str(e)[:100]}")
+                continue
+        
+        if not model:
+            logger.error("[AI] ❌ No Gemini models available. Check API key and library version.")
+            logger.error(f"[AI] Required: google-generativeai>=0.8.3 for Gemini 2.5 Flash support")
+            return None
+        
+        logger.info(f"[AI] Sending message to {used_model}: {user_message[:50]}...")
+        
+        # Generate response with safety settings
+        try:
+            response = model.generate_content(
+                user_message,
+                safety_settings=[
+                    {
+                        "category": "HARM_CATEGORY_HARASSMENT",
+                        "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+                    },
+                    {
+                        "category": "HARM_CATEGORY_HATE_SPEECH",
+                        "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+                    },
+                    {
+                        "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                        "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+                    },
+                    {
+                        "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                        "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+                    }
+                ]
+            )
+        except Exception as api_error:
+            logger.error(f"[AI] ❌ API call failed with {used_model}: {api_error}")
+            return None
+        
+        # Check if response was blocked by safety filters
+        if hasattr(response, 'prompt_feedback') and response.prompt_feedback:
+            if hasattr(response.prompt_feedback, 'block_reason') and response.prompt_feedback.block_reason:
+                logger.warning(f"[AI] ✗ Response blocked by safety filters: {response.prompt_feedback.block_reason}")
+                return None
+        
+        # Check if response text exists
+        if not hasattr(response, 'text') or not response.text:
+            logger.warning(f"[AI] ✗ {used_model} returned empty response")
+            return None
+        
+        ai_response = response.text.strip()
+        
+        if not ai_response:
+            logger.warning("[AI] ✗ AI response empty after stripping")
+            return None
+        
+        logger.info(f"[AI] ✓ Response received from {used_model} ({len(ai_response)} chars)")
+        
+        # Translate to target language if needed
+        if target_language != 'en':
+            try:
+                logger.info(f"[AI] Translating response to {target_language}")
+                ai_response = translate_text(ai_response, target_language, 'en')
+                logger.info(f"[AI] ✓ Translation successful")
+            except Exception as e:
+                logger.error(f"[AI] ✗ Translation failed: {e}")
+                logger.info(f"[AI] Returning English response due to translation error")
+        
+        return ai_response
+        
+    except Exception as e:
+        logger.error(f"[AI] ❌ Unexpected error in get_ai_response: {e}", exc_info=True)
+        import traceback
+        logger.error(traceback.format_exc())
+        return None
+
+@app.route('/api/test-ai', methods=['GET'])
+def test_ai():
+    """Diagnostic endpoint to test AI connectivity and model availability"""
+    import pkg_resources
+    
+    results = {
+        'timestamp': datetime.now().isoformat(),
+        'library_version': pkg_resources.get_distribution("google-generativeai").version,
+        'api_key_configured': bool(GOOGLE_API_KEY),
+        'api_key_format': 'AIza...' if GOOGLE_API_KEY and len(GOOGLE_API_KEY) > 10 else 'Invalid',
+        'system_prompt_length': len(BANKING_ASSISTANT_SYSTEM_PROMPT),
+        'tests': {}
+    }
+    
+    logger.info(f"[TEST] Starting AI diagnostics - Library version: {results['library_version']}")
+    
+    # Test Gemini 2.5 Flash
+    try:
+        logger.info("[TEST] Testing Gemini 2.5 Flash model...")
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        test_response = model.generate_content("What is 2+2?", safety_settings=[
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"}
+        ])
+        
+        if test_response and hasattr(test_response, 'text') and test_response.text:
+            results['tests']['gemini_2.5_flash'] = {
+                'status': 'success',
+                'response': test_response.text[:100],
+                'has_text': True
+            }
+            logger.info("[TEST] ✓ Gemini 2.5 Flash working")
+        else:
+            results['tests']['gemini_2.5_flash'] = {
+                'status': 'failed',
+                'error': 'No response text',
+                'has_text': False
+            }
+            logger.warning("[TEST] ✗ Gemini 2.5 Flash returned no text")
+    except Exception as e:
+        results['tests']['gemini_2.5_flash'] = {
+            'status': 'failed',
+            'error': str(e),
+            'error_type': type(e).__name__
+        }
+        logger.warning(f"[TEST] ✗ Gemini 2.5 Flash error: {e}")
+    
+    # Test Gemini 1.5 Flash
+    try:
+        logger.info("[TEST] Testing Gemini 1.5 Flash model...")
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        test_response = model.generate_content("What is 2+2?", safety_settings=[
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"}
+        ])
+        
+        if test_response and hasattr(test_response, 'text') and test_response.text:
+            results['tests']['gemini_1.5_flash'] = {
+                'status': 'success',
+                'response': test_response.text[:100],
+                'has_text': True
+            }
+            logger.info("[TEST] ✓ Gemini 1.5 Flash working")
+        else:
+            results['tests']['gemini_1.5_flash'] = {
+                'status': 'failed',
+                'error': 'No response text',
+                'has_text': False
+            }
+            logger.warning("[TEST] ✗ Gemini 1.5 Flash returned no text")
+    except Exception as e:
+        results['tests']['gemini_1.5_flash'] = {
+            'status': 'failed',
+            'error': str(e),
+            'error_type': type(e).__name__
+        }
+        logger.warning(f"[TEST] ✗ Gemini 1.5 Flash error: {e}")
+    
+    # Test Gemini 1.5 Pro
+    try:
+        logger.info("[TEST] Testing Gemini 1.5 Pro model...")
+        model = genai.GenerativeModel('gemini-1.5-pro')
+        test_response = model.generate_content("What is 2+2?", safety_settings=[
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"}
+        ])
+        
+        if test_response and hasattr(test_response, 'text') and test_response.text:
+            results['tests']['gemini_1.5_pro'] = {
+                'status': 'success',
+                'response': test_response.text[:100],
+                'has_text': True
+            }
+            logger.info("[TEST] ✓ Gemini 1.5 Pro working")
+        else:
+            results['tests']['gemini_1.5_pro'] = {
+                'status': 'failed',
+                'error': 'No response text',
+                'has_text': False
+            }
+            logger.warning("[TEST] ✗ Gemini 1.5 Pro returned no text")
+    except Exception as e:
+        results['tests']['gemini_1.5_pro'] = {
+            'status': 'failed',
+            'error': str(e),
+            'error_type': type(e).__name__
+        }
+        logger.warning(f"[TEST] ✗ Gemini 1.5 Pro error: {e}")
+    
+    # Overall status
+    passed = sum(1 for test in results['tests'].values() if test.get('status') == 'success')
+    results['summary'] = {
+        'total_tests': len(results['tests']),
+        'passed': passed,
+        'failed': len(results['tests']) - passed,
+        'all_working': passed > 0,
+        'recommendation': 'AI is ready to use' if passed > 0 else 'Check library version and API key'
+    }
+    
+    if passed == 0:
+        logger.error(f"[TEST] ❌ All model tests failed. Check requirements: google-generativeai >= 0.8.3")
+    else:
+        logger.info(f"[TEST] ✓ {passed}/{len(results['tests'])} models working")
+    
+    return jsonify(results), 200 if passed > 0 else 500
 
 @app.route('/api/interactions', methods=['GET'])
 def get_interactions():
@@ -309,4 +599,3 @@ with app.app_context():
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
-
