@@ -55,6 +55,16 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 
+# Health check endpoint for deployment
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint for Railway deployment"""
+    return jsonify({
+        'status': 'healthy',
+        'service': 'Kyndryl Banking Assistant',
+        'timestamp': datetime.utcnow().isoformat()
+    }), 200
+
 # Database Models
 class Interaction(db.Model):
     id = db.Column(db.Integer, primary_key=True)

@@ -1,44 +1,44 @@
 # Netlify configuration for Kyndryl Banking Assistant
-# This file manages deployment and build processes for both frontend and backend
+# Deploys React frontend + Python Flask backend using Railpack
 
 [build]
-# Build command - runs frontend setup
-command = "cd frontend && npm install && npm start"
-# Directory to deploy
+# Build frontend and prepare backend for serverless deployment
+command = "cd frontend && npm install && npm run build && cd .. && pip install -r backend/requirements.txt"
+# Directory to deploy (React build output)
 publish = "frontend/build"
+# Functions directory for serverless backend
+functions = "netlify/functions"
 
-# Environment variables
+# Environment variables for build
 [build.environment]
 NODE_VERSION = "18"
 PYTHON_VERSION = "3.11"
+PIP_CACHE_DIR = ".cache/pip"
 
-# Functions configuration for backend
-[functions]
-directory = "backend"
-node_bundler = "esbuild"
-
-# Redirects for API calls
-[[redirects]]
-from = "/api/*"
-to = "/.netlify/functions/api/:splat"
-status = 200
+# Ignore commands - don't rebuild on these file changes
+[build.ignore]
+command = "git diff --quiet HEAD~1 frontend/"
 
 # Dev server configuration
 [dev]
 # Frontend dev server
 command = "cd frontend && npm start"
-functions = "backend"
 port = 3000
-# Backend server runs on port 5000
-targetPort = 5000
+targetPort = 3000
 
-# Rewrite rules for single page app
+# API redirects - route all /api/* to serverless backend functions
+[[redirects]]
+from = "/api/*"
+to = "/.netlify/functions/api/:splat"
+status = 200
+
+# Single page app rewrite (everything else goes to index.html)
 [[redirects]]
 from = "/*"
 to = "/index.html"
 status = 200
 
-# Cache headers
+# Cache control headers
 [[headers]]
 for = "/*"
 [headers.values]
@@ -49,11 +49,22 @@ for = "/static/*"
 [headers.values]
 Cache-Control = "public, max-age=31536000, immutable"
 
-# Additional environment for local development
+[[headers]]
+for = "/api/*"
+[headers.values]
+Cache-Control = "no-cache, no-store, must-revalidate"
+
+# Netlify Edge Functions - optional performance enhancement
+[edge_functions]
+
+# Development environment
 [env.development]
 [env.development.build.environment]
-API_BASE_URL = "http://localhost:5000"
+API_BASE_URL = "http://localhost:3000"
+FLASK_ENV = "development"
 
+# Production environment
 [env.production]
 [env.production.build.environment]
 API_BASE_URL = "https://kyndryl-banking-assistant.netlify.app"
+FLASK_ENV = "production"
