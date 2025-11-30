@@ -3,7 +3,7 @@
 
 [build]
 # Build command - runs frontend setup
-command = "cd frontend && npm install && npm run build"
+command = "cd frontend && npm install && npm start"
 # Directory to deploy
 publish = "frontend/build"
 
