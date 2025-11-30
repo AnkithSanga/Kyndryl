@@ -54,9 +54,6 @@ for = "/api/*"
 [headers.values]
 Cache-Control = "no-cache, no-store, must-revalidate"
 
-# Netlify Edge Functions - optional performance enhancement
-[edge_functions]
-
 # Development environment
 [env.development]
 [env.development.build.environment]
