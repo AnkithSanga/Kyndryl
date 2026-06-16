@@ -191,12 +191,14 @@ GET /api/test-ai
 
 ## ⚙️ Configuration
 
-### Environment Variables (Optional)
+### Environment Variables
+Create a `backend/.env` file with the following value:
+
 ```bash
-export GOOGLE_API_KEY="your-api-key-here"
+GOOGLE_API_KEY="your-google-api-key-here"
 ```
 
-If not set, uses default key configured in `backend/app.py`.
+Then deploy with your platform-specific env config. If the key is not set, AI features will be disabled.
 
 ### Supported Languages
 - English (en)

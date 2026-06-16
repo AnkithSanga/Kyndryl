@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Configure Google Generative AI (Gemini)
-GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY', 'AIzaSyAU0P4W-8F8ZkCbS8f-ilCccrOiVvvi3fM')
+GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
 if GOOGLE_API_KEY:
     genai.configure(api_key=GOOGLE_API_KEY)
     logger.info("Google Generative AI configured successfully with API key")
